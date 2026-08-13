@@ -252,8 +252,25 @@ export class StarRenderer {
 
   // Kamera-Basis aus Blickrichtung + Horizontbasis (aequatoriale Vektoren).
   _updateCamera(view, frame) {
-    const az = view.azDeg * D2R, alt = view.altDeg * D2R, roll = view.rollDeg * D2R;
     const { N, E, U } = frame;
+    if (view.basisEarth) {
+      // Sensor-Modus: komplette Basis (Erdsystem x=Ost, y=Nord, z=oben) in
+      // den aequatorialen Frame heben. Singularitaetsfrei auch im Zenit.
+      // right = fwd x up entspricht exakt der Roll-Konvention unten.
+      const b = view.basisEarth;
+      const fwd = lincomb(N, b.fwd[1], E, b.fwd[0], U, b.fwd[2]);
+      const up = lincomb(N, b.up[1], E, b.up[0], U, b.up[2]);
+      const right = cross(fwd, up);
+      const fovClamped = Math.max(20, Math.min(100, view.fovDeg));
+      const fpx = (this.h / 2) / Math.tan((fovClamped * D2R) / 2);
+      this.cam = {
+        right, up, fwd, fpx,
+        cx: this.w / 2, cy: this.h / 2,
+        U, fov: fovClamped,
+      };
+      return;
+    }
+    const az = view.azDeg * D2R, alt = view.altDeg * D2R, roll = view.rollDeg * D2R;
     const ca = Math.cos(az), sa = Math.sin(az);
     const ch = Math.cos(alt), sh = Math.sin(alt);
     const fwd = lincomb(N, ch * ca, E, ch * sa, U, sh);

@@ -73,7 +73,9 @@ function orientationToView(alphaDeg, betaDeg, gammaDeg, screenAngleDeg) {
     const y = upScr[0] * up0[0] + upScr[1] * up0[1] + upScr[2] * up0[2];
     rollDeg = Math.atan2(x, y) * R2D;
   }
-  return { azDeg, altDeg, rollDeg };
+  // fwd und up (Erdsystem) zusaetzlich zurueckgeben: die Vektorbasis ist im
+  // Gegensatz zu az/alt/roll auch im Zenit frei von Singularitaeten.
+  return { azDeg, altDeg, rollDeg, fwd: v, up: upScr };
 }
 
 function screenAngle() {
@@ -99,9 +101,9 @@ export function createViewController(opts) {
   let mode = "manuell";
 
   // --- Sensor-Zustand ---
-  let sensorTarget = null;     // { vec:[x,y,z] Erdsystem, rollDeg }
-  let sensorSmooth = null;
-  let sensorRollSmooth = 0;
+  let sensorTarget = null;     // { fwd:[x,y,z], up:[x,y,z] } im Erdsystem
+  let sensorSmoothF = null;    // geglaettete Blickrichtung
+  let sensorSmoothU = null;    // geglaettetes Bildschirm-oben
   let sensorEventSeen = false;
   let sensorListening = false;
   let sensorWatchdog = 0;
@@ -202,12 +204,14 @@ export function createViewController(opts) {
       onSensorStatus("relativ");
     }
 
-    const azDeg = headingOffsetInit ? (t.azDeg + headingOffsetDeg) % 360 : t.azDeg;
-    const ch = Math.cos(t.altDeg * D2R);
-    sensorTarget = {
-      vec: [ch * Math.sin(azDeg * D2R), ch * Math.cos(azDeg * D2R), Math.sin(t.altDeg * D2R)],
-      rollDeg: t.rollDeg,
-    };
+    // Nord-Offset als Drehung um die Erd-Vertikale auf die komplette Basis
+    // anwenden (fwd UND up), damit Blickrichtung und Bildorientierung als
+    // Einheit bleiben. x = Ost, y = Nord: az+delta entspricht
+    // x' = x cos d + y sin d, y' = -x sin d + y cos d.
+    const d = headingOffsetInit ? headingOffsetDeg * D2R : 0;
+    const cd = Math.cos(d), sd = Math.sin(d);
+    const rotZ = (v) => [v[0] * cd + v[1] * sd, -v[0] * sd + v[1] * cd, v[2]];
+    sensorTarget = { fwd: rotZ(t.fwd), up: rotZ(t.up) };
     sensorEventSeen = true;
   }
 
@@ -367,24 +371,31 @@ export function createViewController(opts) {
     const dt = Math.min(dtMs, 100) / 1000;
 
     if (mode === "sensor" && sensorTarget) {
-      // Tiefpass auf dem Richtungsvektor (kein 0/360-Sprung), Roll separat.
+      // Tiefpass auf der kompletten Vektorbasis (fwd + up). Im Gegensatz zur
+      // getrennten az/alt/roll-Glaettung ist das auch im Zenit stetig: dort
+      // springen Azimut und Roll gegenlaeufig um 180 Grad, die Vektoren nicht.
       const k = 1 - Math.exp(-dt / 0.12);
-      if (!sensorSmooth) {
-        sensorSmooth = sensorTarget.vec.slice();
-        sensorRollSmooth = sensorTarget.rollDeg;
+      if (!sensorSmoothF) {
+        sensorSmoothF = sensorTarget.fwd.slice();
+        sensorSmoothU = sensorTarget.up.slice();
       } else {
         for (let i = 0; i < 3; i++) {
-          sensorSmooth[i] += (sensorTarget.vec[i] - sensorSmooth[i]) * k;
+          sensorSmoothF[i] += (sensorTarget.fwd[i] - sensorSmoothF[i]) * k;
+          sensorSmoothU[i] += (sensorTarget.up[i] - sensorSmoothU[i]) * k;
         }
-        let dR = sensorTarget.rollDeg - sensorRollSmooth;
-        dR = ((dR + 540) % 360) - 180;
-        sensorRollSmooth += dR * k;
       }
-      const n = Math.hypot(sensorSmooth[0], sensorSmooth[1], sensorSmooth[2]) || 1;
-      const vx = sensorSmooth[0] / n, vy = sensorSmooth[1] / n, vz = sensorSmooth[2] / n;
-      view.azDeg = norm360(Math.atan2(vx, vy) * R2D);
-      view.altDeg = Math.asin(clamp(vz, -1, 1)) * R2D;
-      view.rollDeg = ((sensorRollSmooth % 360) + 540) % 360 - 180;
+      // Orthonormalisieren: f normieren, u senkrecht zu f machen.
+      const nf = Math.hypot(sensorSmoothF[0], sensorSmoothF[1], sensorSmoothF[2]) || 1;
+      const f = [sensorSmoothF[0] / nf, sensorSmoothF[1] / nf, sensorSmoothF[2] / nf];
+      const du = sensorSmoothU[0] * f[0] + sensorSmoothU[1] * f[1] + sensorSmoothU[2] * f[2];
+      let u = [sensorSmoothU[0] - du * f[0], sensorSmoothU[1] - du * f[1], sensorSmoothU[2] - du * f[2]];
+      const nu = Math.hypot(u[0], u[1], u[2]);
+      if (nu > 1e-6) { u = [u[0] / nu, u[1] / nu, u[2] / nu]; }
+      else { u = [0, 0, 1]; } // degeneriert (up parallel fwd): neutral
+      view.azDeg = norm360(Math.atan2(f[0], f[1]) * R2D);
+      view.altDeg = Math.asin(clamp(f[2], -1, 1)) * R2D;
+      view.rollDeg = 0; // Bildorientierung steckt vollstaendig in der Basis
+      view.basisEarth = { fwd: f, up: u };
     } else if (mode === "manuell") {
       if (!manual.dragging) {
         // Traegheit mit Daempfung
@@ -403,8 +414,9 @@ export function createViewController(opts) {
       view.azDeg = norm360(view.azDeg + dAz * k);
       view.altDeg += (manual.targetAlt - view.altDeg) * k;
       view.rollDeg = 0;
+      view.basisEarth = null;
     }
-    return { azDeg: view.azDeg, altDeg: view.altDeg, rollDeg: view.rollDeg, fovDeg: view.fovDeg, mode };
+    return { azDeg: view.azDeg, altDeg: view.altDeg, rollDeg: view.rollDeg, fovDeg: view.fovDeg, basisEarth: view.basisEarth || null, mode };
   }
 
   return {
