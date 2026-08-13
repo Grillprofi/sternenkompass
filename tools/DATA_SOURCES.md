@@ -46,3 +46,7 @@ node tools/build-data.mjs --validate  # nur Abnahmeprüfung der data/*.json
 
 - Cache: `$STERNENKOMPASS_CACHE` oder `<tmpdir>/sternenkompass-cache`.
 - Validierung (Exit-Code ungleich 0 bei Fehlschlag): JSON-Parse aller drei Dateien; 4500 bis 9000 Sterne; 88 Sternbilder; jede Linien-HIP in `stars.json` vorhanden; `objects.json` mit allen 9 Schlüsseln; Stichproben Polarstern (HIP 11767, RA ≈ 37,95°, Dec ≈ +89,26°) und Sirius (HIP 32349, mag ≈ −1,44); Stilprüfung der Infotexte (Länge, keine Gedankenstriche, keine Emojis).
+
+## Nachbearbeitung 13.08.2026
+
+Die deutschen Textfelder in `constellations.json` (de, info) und `objects.json` wurden nachtraeglich von ae/oe/ue-Schreibweise auf echte Umlaute und kuratierte ss-auf-ß-Faelle umgestellt (Ausnahmen: lateinische Namen wie Carinae, Tucanae, Praesepe, Phaethon, Rasalhague). Die in `build-data.mjs` eingebetteten Ausgangstexte sind davon unberuehrt; bei einem Neubau der Daten muss die Umlaut-Nachbearbeitung wiederholt oder ins Skript uebernommen werden.

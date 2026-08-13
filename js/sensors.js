@@ -175,20 +175,26 @@ export function createViewController(opts) {
       // Genauigkeit: iOS liefert webkitCompassAccuracy in Grad (-1 = ungueltig).
       const acc = typeof ev.webkitCompassAccuracy === "number" ? ev.webkitCompassAccuracy : 999;
       const accOk = acc >= 0 && acc <= 35;
-      // Kompass nur lernen, solange nicht steil in den Himmel gezielt wird.
-      const flatEnough = Math.abs(t.altDeg) < 55;
+      // iOS bezieht webkitCompassHeading auf die OBERKANTE des Geraets.
+      // Steht das Handy aufrecht (Kamera Richtung Horizont), zeigt die
+      // Oberkante fast senkrecht nach oben und der Kompasswert wird
+      // unbestimmt und verrauscht. Deshalb wird Nord nur gelernt, wenn
+      // die Oberkante flach genug liegt: Elevation der Oberkante = sin(beta),
+      // unabhaengig von gamma. Streng zum Nachfuehren, locker zum Seeden.
+      const topElev = Math.abs(Math.sin(beta * D2R));
+      const deviceFlat = topElev < 0.64 && Math.abs(beta) < 90;   // Oberkante < ~40 Grad
+      const seedOk = topElev < 0.94 && Math.abs(beta) < 90;       // < ~70 Grad
       // Kompass-konsistente Lage exakt wie die Gyro-Lage berechnen
       // (alpha_absolut = 360 - webkitCompassHeading); die Differenz der
-      // Azimute ist dann eine reine Drehung um die Vertikale und damit
-      // fuer jede Haltung des Geraets der richtige Offset.
+      // Azimute ist eine reine Drehung um die Vertikale.
       const tc = orientationToView(360 - ev.webkitCompassHeading, beta, gamma, screenAngle());
       const offset = ((tc.azDeg - t.azDeg) % 360 + 360) % 360;
-      if (!headingOffsetInit && (accOk || acc === 999)) {
+      if (!headingOffsetInit && seedOk && (accOk || acc === 999)) {
         headingOffsetDeg = offset;
         headingOffsetInit = true;
-      } else if (headingOffsetInit && accOk && flatEnough) {
+      } else if (headingOffsetInit && accOk && deviceFlat) {
         // sehr traege nachfuehren (Gyro-Drift-Korrektur, keine Spruenge)
-        headingOffsetDeg = circularLerpDeg(headingOffsetDeg, offset, 0.02);
+        headingOffsetDeg = circularLerpDeg(headingOffsetDeg, offset, 0.008);
       }
     } else if (ev.type === "deviceorientation" && ev.absolute !== true && !handleOrientation._warned) {
       // Nur relative Werte verfuegbar: Norden stimmt evtl. nicht.
