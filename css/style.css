@@ -1,0 +1,355 @@
+/* Sternenkompass – dunkles Nachthimmel-UI (Contract Abschnitt C).
+ * Farben: Ground #0a0e1a, Karte #050810, Text #e9edf8, Akzent #f0c66a. */
+
+:root {
+  --ground: #0a0e1a;
+  --karte: #050810;
+  --text: #e9edf8;
+  --text-dim: #9aa3ba;
+  --akzent: #f0c66a;
+  --panel: rgba(14, 19, 34, 0.92);
+  --rand: rgba(233, 237, 248, 0.14);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--ground);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+.mono {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+[hidden] { display: none !important; }
+
+/* --- Karte ------------------------------------------------------------- */
+
+#karte {
+  position: fixed;
+  inset: 0;
+  background: var(--karte);
+}
+
+#karte canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#overlay-canvas { touch-action: none; }
+
+/* --- Statuszeile -------------------------------------------------------- */
+
+#statuszeile {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: calc(var(--safe-top) + 6px) calc(var(--safe-right) + 12px) 6px calc(var(--safe-left) + 12px);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  background: linear-gradient(rgba(5, 8, 16, 0.85), rgba(5, 8, 16, 0));
+  pointer-events: none;
+  z-index: 20;
+  white-space: nowrap;
+}
+
+#statuszeile #status-ort { overflow: hidden; text-overflow: ellipsis; }
+#statuszeile #status-blick { color: var(--akzent); }
+
+/* --- Werkzeugleiste ------------------------------------------------------ */
+
+#werkzeuge {
+  position: fixed;
+  right: calc(var(--safe-right) + 10px);
+  top: calc(var(--safe-top) + 40px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 30;
+}
+
+.wz-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--rand);
+  background: var(--panel);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.wz-btn svg { width: 22px; height: 22px; }
+.wz-btn.aktiv { color: var(--akzent); border-color: var(--akzent); }
+.wz-btn:active { transform: scale(0.94); }
+
+/* --- Einstellungen-Popover ---------------------------------------------- */
+
+#einstellungen {
+  position: fixed;
+  right: calc(var(--safe-right) + 62px);
+  top: calc(var(--safe-top) + 40px);
+  z-index: 40;
+  background: var(--panel);
+  border: 1px solid var(--rand);
+  border-radius: 14px;
+  padding: 10px 14px 6px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+#einstellungen h2 {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin: 4px 0 2px;
+}
+
+#einstellungen label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#einstellungen input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--akzent);
+}
+
+/* --- Info-Panel (Bottom-Sheet) ------------------------------------------- */
+
+#info-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  background: var(--panel);
+  border-top: 1px solid var(--rand);
+  border-radius: 18px 18px 0 0;
+  padding: 10px calc(var(--safe-right) + 18px) calc(var(--safe-bottom) + 16px) calc(var(--safe-left) + 18px);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.55);
+  max-height: 55%;
+  overflow-y: auto;
+  animation: hochschieben 0.22s ease-out;
+}
+
+@keyframes hochschieben {
+  from { transform: translateY(30%); opacity: 0.4; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+#info-griff {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--rand);
+  margin: 0 auto 10px;
+}
+
+#info-schliessen {
+  position: absolute;
+  top: 8px;
+  right: calc(var(--safe-right) + 8px);
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#info-name { font-size: 1.35rem; font-weight: 700; padding-right: 44px; }
+#info-name .bayer { font-weight: 400; color: var(--text-dim); font-size: 1.05rem; }
+
+#info-untertitel { color: var(--akzent); font-size: 0.9rem; margin: 2px 0 10px; }
+
+#info-daten {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+}
+
+#info-daten dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+}
+
+#info-daten dd { font-size: 0.95rem; margin-top: 1px; }
+
+#info-text { font-size: 0.92rem; line-height: 1.5; color: var(--text); }
+
+/* --- Fehler und Hinweise -------------------------------------------------- */
+
+#fehler-banner {
+  position: fixed;
+  top: calc(var(--safe-top) + 34px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92vw, 420px);
+  z-index: 60;
+  background: rgba(64, 22, 24, 0.95);
+  border: 1px solid rgba(255, 120, 110, 0.5);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+#fehler-text { font-size: 0.92rem; line-height: 1.45; }
+
+#fehler-schliessen {
+  margin-top: 10px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 120, 110, 0.5);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+#hinweis {
+  position: fixed;
+  bottom: calc(var(--safe-bottom) + 24px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 88vw;
+  z-index: 60;
+  background: var(--panel);
+  border: 1px solid var(--rand);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 0.88rem;
+  color: var(--text);
+  pointer-events: none;
+  text-align: center;
+}
+
+/* --- Start-Overlay -------------------------------------------------------- */
+
+#start-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: linear-gradient(rgba(5, 8, 16, 0.35) 0%, rgba(5, 8, 16, 0.88) 70%);
+  padding: 16px;
+}
+
+#start-karte {
+  width: min(94vw, 420px);
+  margin-bottom: calc(var(--safe-bottom) + 18px);
+  background: var(--panel);
+  border: 1px solid var(--rand);
+  border-radius: 20px;
+  padding: 24px 22px calc(16px);
+  text-align: center;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+#start-karte h1 {
+  font-size: 1.6rem;
+  letter-spacing: 0.02em;
+  color: var(--akzent);
+  margin-bottom: 8px;
+}
+
+#start-karte p { font-size: 0.95rem; line-height: 1.5; color: var(--text); }
+
+.start-btn {
+  display: block;
+  width: 100%;
+  min-height: 50px;
+  margin-top: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--rand);
+  background: rgba(233, 237, 248, 0.06);
+  color: var(--text);
+  font-size: 1.02rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.start-btn.primaer {
+  background: var(--akzent);
+  border-color: var(--akzent);
+  color: #191104;
+}
+
+.start-btn:active { transform: scale(0.98); }
+
+.start-fussnote { margin-top: 12px; font-size: 0.75rem !important; color: var(--text-dim) !important; }
+
+/* --- Nachtmodus (Rotfilter) ----------------------------------------------- */
+
+#nachtfilter {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+  background: #ff2413;
+  mix-blend-mode: multiply;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+html.nachtmodus #nachtfilter { opacity: 1; }
+
+/* Im Nachtmodus zusätzlich Restfarben entsättigen, damit nichts blau durchscheint. */
+html.nachtmodus #karte,
+html.nachtmodus #statuszeile,
+html.nachtmodus #werkzeuge,
+html.nachtmodus #einstellungen,
+html.nachtmodus #info-panel,
+html.nachtmodus #hinweis,
+html.nachtmodus #fehler-banner,
+html.nachtmodus #start-overlay {
+  filter: grayscale(0.35) brightness(0.9);
+}

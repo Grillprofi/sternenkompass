@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Sternenkompass Icon-Quelle</title>
+<!--
+  Icon-Quelle fuer die PWA-Icons (Teilbereich D).
+
+  Motiv: stilisierte Kompassnadel auf Sternfeld, dunkler Grund #0a0e1a, Akzent #f0c66a.
+  Alles wird deterministisch gezeichnet (fester Seed, mulberry32), damit wiederholte
+  Laeufe byte-identische PNGs erzeugen. Keine externen Ressourcen, keine npm-Pakete.
+
+  Aufruf ueber Query-Parameter:
+    ?size=512&variant=standard
+    ?size=512&variant=maskable   (Motiv verkleinert, damit es in der 80%-Safe-Zone liegt)
+    ?size=180&variant=standard   (apple-touch-icon, immer deckend)
+
+  Rendern per Chromium-Screenshot, siehe make-icons.sh.
+-->
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0e1a; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+"use strict";
+
+var TAU = Math.PI * 2;
+
+/* ---------- deterministischer PRNG (mulberry32) ---------- */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+var SEED = 20260812;      // fest -> reproduzierbares Sternfeld
+var STAR_COUNT = 110;
+
+var COL_GROUND = "#0a0e1a";
+var COL_ACCENT = "#f0c66a";
+
+/* ---------- Hilfsformen ---------- */
+
+// Vierzackiger Funkelstern (zwei sich kreuzende, spitze Rauten) plus weicher Halo.
+function sparkle(ctx, x, y, r, alpha, tilt) {
+  var w = r * 0.24;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(tilt || 0);
+
+  var halo = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.5);
+  halo.addColorStop(0, "rgba(233,237,248," + (alpha * 0.55).toFixed(3) + ")");
+  halo.addColorStop(1, "rgba(233,237,248,0)");
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.5, 0, TAU);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255," + alpha.toFixed(3) + ")";
+  for (var k = 0; k < 2; k++) {
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.quadraticCurveTo(w * 0.5, -w * 0.5, r, 0);
+    ctx.quadraticCurveTo(w * 0.5, w * 0.5, 0, r);
+    ctx.quadraticCurveTo(-w * 0.5, w * 0.5, -r, 0);
+    ctx.quadraticCurveTo(-w * 0.5, -w * 0.5, 0, -r);
+    ctx.fill();
+    ctx.rotate(Math.PI / 4);
+    r *= 0.55;
+    w *= 0.55;
+  }
+  ctx.restore();
+}
+
+// Radiale Teilstriche des Kompassrings.
+function tick(ctx, cx, cy, angleDeg, r0, r1, width, color) {
+  var a = (angleDeg - 90) * Math.PI / 180;
+  var ca = Math.cos(a), sa = Math.sin(a);
+  ctx.beginPath();
+  ctx.moveTo(cx + ca * r0, cy + sa * r0);
+  ctx.lineTo(cx + ca * r1, cy + sa * r1);
+  ctx.lineWidth = width;
+  ctx.lineCap = "butt";
+  ctx.strokeStyle = color;
+  ctx.stroke();
+}
+
+/* ---------- Hauptmotiv ---------- */
+function drawIcon(ctx, S, contentScale) {
+  var cx = S / 2, cy = S / 2;
+
+  /* Grund */
+  ctx.fillStyle = COL_GROUND;
+  ctx.fillRect(0, 0, S, S);
+
+  /* Weicher Nachthimmel-Schimmer */
+  var glow = ctx.createRadialGradient(cx, S * 0.44, 0, cx, S * 0.44, S * 0.66);
+  glow.addColorStop(0.00, "rgba(38,56,104,0.55)");
+  glow.addColorStop(0.45, "rgba(22,32,62,0.38)");
+  glow.addColorStop(1.00, "rgba(10,14,26,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, S, S);
+
+  /* Sternfeld (deterministisch, randlos ueber die volle Flaeche) */
+  var rnd = mulberry32(SEED);
+  for (var i = 0; i < STAR_COUNT; i++) {
+    var x = rnd() * S;
+    var y = rnd() * S;
+    var m = rnd();                       // 0 = hell/gross, 1 = schwach/klein
+    var r = (0.0018 + (1 - m) * (1 - m) * 0.0085) * S;
+    var a = 0.28 + (1 - m) * 0.62;
+    var t = rnd();
+    var col = t > 0.90 ? "240,198,106" : (t > 0.68 ? "196,214,255" : "233,237,248");
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, TAU);
+    ctx.fillStyle = "rgba(" + col + "," + a.toFixed(3) + ")";
+    ctx.fill();
+  }
+
+  /* Vier gesetzte Funkelsterne fuer Wiedererkennbarkeit */
+  sparkle(ctx, S * 0.175, S * 0.205, S * 0.055, 0.92, 0.0);
+  sparkle(ctx, S * 0.830, S * 0.285, S * 0.040, 0.80, 0.35);
+  sparkle(ctx, S * 0.250, S * 0.815, S * 0.032, 0.68, -0.25);
+  sparkle(ctx, S * 0.795, S * 0.780, S * 0.026, 0.58, 0.15);
+
+  /* Ab hier: Kompass-Gruppe, fuer maskable verkleinert */
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(contentScale, contentScale);
+  ctx.translate(-cx, -cy);
+
+  var R_OUT = 0.372 * S;
+  var R_IN  = 0.312 * S;
+
+  /* Abdunklung unter dem Ring, damit die Nadel Kontrast bekommt */
+  var disc = ctx.createRadialGradient(cx, cy, 0, cx, cy, R_OUT);
+  disc.addColorStop(0.00, "rgba(6,9,18,0.86)");
+  disc.addColorStop(0.72, "rgba(8,12,22,0.62)");
+  disc.addColorStop(1.00, "rgba(10,14,26,0.10)");
+  ctx.fillStyle = disc;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R_OUT, 0, TAU);
+  ctx.fill();
+
+  /* Aussenring */
+  ctx.beginPath();
+  ctx.arc(cx, cy, R_OUT, 0, TAU);
+  ctx.lineWidth = 0.020 * S;
+  ctx.strokeStyle = "rgba(240,198,106,0.46)";
+  ctx.stroke();
+
+  /* Innenring */
+  ctx.beginPath();
+  ctx.arc(cx, cy, R_IN, 0, TAU);
+  ctx.lineWidth = 0.007 * S;
+  ctx.strokeStyle = "rgba(240,198,106,0.22)";
+  ctx.stroke();
+
+  /* Teilstriche: 24 fein, 4 mittel (diagonal), 4 kraeftig (kardinal) */
+  var d;
+  for (d = 0; d < 360; d += 15) {
+    if (d % 45 === 0) continue;
+    tick(ctx, cx, cy, d, R_IN + 0.010 * S, R_OUT - 0.014 * S, 0.006 * S, "rgba(240,198,106,0.28)");
+  }
+  for (d = 45; d < 360; d += 90) {
+    tick(ctx, cx, cy, d, R_IN + 0.004 * S, R_OUT - 0.012 * S, 0.011 * S, "rgba(240,198,106,0.52)");
+  }
+  for (d = 0; d < 360; d += 90) {
+    tick(ctx, cx, cy, d, R_IN - 0.006 * S, R_OUT - 0.010 * S, 0.020 * S, "rgba(240,198,106,0.92)");
+  }
+
+  /* Nordmarke: kleines Dreieck ausserhalb des Rings */
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 0.436 * S);
+  ctx.lineTo(cx + 0.030 * S, cy - 0.388 * S);
+  ctx.lineTo(cx - 0.030 * S, cy - 0.388 * S);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(240,198,106,0.88)";
+  ctx.fill();
+
+  /* Kompassnadel, leicht aus der Senkrechten gedreht */
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-21 * Math.PI / 180);
+
+  var L = 0.300 * S;   // halbe Nadellaenge
+  var W = 0.068 * S;   // halbe Nadelbreite
+
+  /* Schein hinter der Nordspitze */
+  var tip = ctx.createRadialGradient(0, -L * 0.82, 0, 0, -L * 0.82, L * 0.62);
+  tip.addColorStop(0, "rgba(240,198,106,0.42)");
+  tip.addColorStop(1, "rgba(240,198,106,0)");
+  ctx.fillStyle = tip;
+  ctx.beginPath();
+  ctx.arc(0, -L * 0.82, L * 0.62, 0, TAU);
+  ctx.fill();
+
+  /* Suedhaelfte (gedeckt) */
+  var south = ctx.createLinearGradient(0, 0, 0, L);
+  south.addColorStop(0, "#3d4b72");
+  south.addColorStop(1, "#1a2237");
+  ctx.beginPath();
+  ctx.moveTo(0, L);
+  ctx.lineTo(W, 0);
+  ctx.lineTo(0, 0);
+  ctx.lineTo(-W, 0);
+  ctx.closePath();
+  ctx.fillStyle = south;
+  ctx.fill();
+
+  /* Nordhaelfte (Akzent) */
+  var north = ctx.createLinearGradient(0, -L, 0, 0);
+  north.addColorStop(0, "#fff0c8");
+  north.addColorStop(0.45, COL_ACCENT);
+  north.addColorStop(1, "#d9a63a");
+  ctx.beginPath();
+  ctx.moveTo(0, -L);
+  ctx.lineTo(W, 0);
+  ctx.lineTo(0, 0);
+  ctx.lineTo(-W, 0);
+  ctx.closePath();
+  ctx.fillStyle = north;
+  ctx.fill();
+
+  /* Trennkante und Kontur */
+  ctx.beginPath();
+  ctx.moveTo(0, -L);
+  ctx.lineTo(W, 0);
+  ctx.lineTo(0, L);
+  ctx.lineTo(-W, 0);
+  ctx.closePath();
+  ctx.lineJoin = "miter";
+  ctx.lineWidth = 0.009 * S;
+  ctx.strokeStyle = "rgba(8,12,22,0.75)";
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(-W, 0);
+  ctx.lineTo(W, 0);
+  ctx.lineWidth = 0.009 * S;
+  ctx.strokeStyle = "rgba(8,12,22,0.75)";
+  ctx.stroke();
+
+  ctx.restore();
+
+  /* Nabe */
+  ctx.beginPath();
+  ctx.arc(cx, cy, 0.058 * S, 0, TAU);
+  ctx.fillStyle = COL_GROUND;
+  ctx.fill();
+  ctx.lineWidth = 0.014 * S;
+  ctx.strokeStyle = "rgba(240,198,106,0.85)";
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, 0.019 * S, 0, TAU);
+  ctx.fillStyle = COL_ACCENT;
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/* ---------- Bootstrap ---------- */
+(function () {
+  var q = new URLSearchParams(location.search);
+  var size = parseInt(q.get("size") || "512", 10);
+  var variant = q.get("variant") || "standard";
+  var contentScale = variant === "maskable" ? 0.78 : 1.0;
+
+  var c = document.getElementById("c");
+  c.width = size;
+  c.height = size;
+  c.style.width = size + "px";
+  c.style.height = size + "px";
+
+  var ctx = c.getContext("2d", { alpha: false });
+  drawIcon(ctx, size, contentScale);
+  document.title = "icon-" + size + "-" + variant;
+  document.documentElement.setAttribute("data-ready", "1");
+})();
+</script>
+</body>
+</html>
