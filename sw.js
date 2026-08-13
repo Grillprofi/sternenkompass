@@ -39,7 +39,7 @@
 "use strict";
 
 /* Bei jedem Release hochzaehlen. */
-const CACHE_VERSION = "v1.0.0";
+const CACHE_VERSION = "v1.0.1";
 const CACHE_NAME = `sternenkompass-${CACHE_VERSION}`;
 
 /* App-Shell: alles, was die App zum Starten braucht. */

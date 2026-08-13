@@ -137,22 +137,59 @@ export function createViewController(opts) {
 
   // ----- Sensor-Handling ---------------------------------------------------
 
+  // Nord-Korrektur: Differenz zwischen Kompass-Azimut (webkitCompassHeading)
+  // und dem Azimut aus der kontinuierlichen Gyro-Lage (alpha/beta/gamma).
+  // Der Kompasswert wird NIE direkt als alpha eingesetzt (er ist beim steilen
+  // Hochhalten instabil und inkonsistent zu beta/gamma, was wilde Spruenge
+  // erzeugt). Stattdessen wird er als langsam nachgefuehrter Offset auf die
+  // in sich glatte Gyro-Lage addiert, und nur dann gelernt, wenn das Geraet
+  // flach genug ist (Kompass zuverlaessig) und die iOS-Genauigkeit ok ist.
+  let headingOffsetDeg = null; // zirkulaer gemittelt
+  let headingOffsetInit = false;
+
+  function circularLerpDeg(fromDeg, toDeg, k) {
+    let d = ((toDeg - fromDeg + 540) % 360) - 180;
+    return (fromDeg + k * d + 360) % 360;
+  }
+
   function handleOrientation(ev) {
-    let alpha = ev.alpha;
-    const beta = ev.beta, gamma = ev.gamma;
+    const alpha = ev.alpha, beta = ev.beta, gamma = ev.gamma;
     if (alpha == null || beta == null || gamma == null) return;
-    if (typeof ev.webkitCompassHeading === "number" && !Number.isNaN(ev.webkitCompassHeading)) {
-      // iOS: echter Kompasswert. alpha ist dort relativ; ersetzen.
-      alpha = 360 - ev.webkitCompassHeading;
+
+    // Kontinuierliche Lage aus dem konsistenten Winkeltriplett.
+    const t = orientationToView(alpha, beta, gamma, screenAngle());
+
+    const hasCompass = typeof ev.webkitCompassHeading === "number" &&
+      !Number.isNaN(ev.webkitCompassHeading) && ev.webkitCompassHeading >= 0;
+    if (hasCompass) {
+      // Genauigkeit: iOS liefert webkitCompassAccuracy in Grad (-1 = ungueltig).
+      const acc = typeof ev.webkitCompassAccuracy === "number" ? ev.webkitCompassAccuracy : 999;
+      const accOk = acc >= 0 && acc <= 35;
+      // Kompass nur lernen, solange nicht steil in den Himmel gezielt wird.
+      const flatEnough = Math.abs(t.altDeg) < 55;
+      // Kompass-konsistente Lage exakt wie die Gyro-Lage berechnen
+      // (alpha_absolut = 360 - webkitCompassHeading); die Differenz der
+      // Azimute ist dann eine reine Drehung um die Vertikale und damit
+      // fuer jede Haltung des Geraets der richtige Offset.
+      const tc = orientationToView(360 - ev.webkitCompassHeading, beta, gamma, screenAngle());
+      const offset = ((tc.azDeg - t.azDeg) % 360 + 360) % 360;
+      if (!headingOffsetInit && (accOk || acc === 999)) {
+        headingOffsetDeg = offset;
+        headingOffsetInit = true;
+      } else if (headingOffsetInit && accOk && flatEnough) {
+        // sehr traege nachfuehren (Gyro-Drift-Korrektur, keine Spruenge)
+        headingOffsetDeg = circularLerpDeg(headingOffsetDeg, offset, 0.02);
+      }
     } else if (ev.type === "deviceorientation" && ev.absolute !== true && !handleOrientation._warned) {
       // Nur relative Werte verfuegbar: Norden stimmt evtl. nicht.
       handleOrientation._warned = true;
       onSensorStatus("relativ");
     }
-    const t = orientationToView(alpha, beta, gamma, screenAngle());
+
+    const azDeg = headingOffsetInit ? (t.azDeg + headingOffsetDeg) % 360 : t.azDeg;
     const ch = Math.cos(t.altDeg * D2R);
     sensorTarget = {
-      vec: [ch * Math.sin(t.azDeg * D2R), ch * Math.cos(t.azDeg * D2R), Math.sin(t.altDeg * D2R)],
+      vec: [ch * Math.sin(azDeg * D2R), ch * Math.cos(azDeg * D2R), Math.sin(t.altDeg * D2R)],
       rollDeg: t.rollDeg,
     };
     sensorEventSeen = true;
@@ -161,6 +198,11 @@ export function createViewController(opts) {
   function startListening() {
     if (sensorListening) return;
     sensorListening = true;
+    // Nach Tab-Wechsel/Sperren kann iOS die Gyro-Referenz (alpha) neu setzen:
+    // Nord-Offset dann neu vom Kompass lernen statt mit veraltetem Wert starten.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") headingOffsetInit = false;
+    });
     // deviceorientationabsolute (Android/Chrome) bevorzugen, wenn vorhanden
     if ("ondeviceorientationabsolute" in window) {
       window.addEventListener("deviceorientationabsolute", handleOrientation, true);
