@@ -155,6 +155,16 @@ export function createViewController(opts) {
   function handleOrientation(ev) {
     const alpha = ev.alpha, beta = ev.beta, gamma = ev.gamma;
     if (alpha == null || beta == null || gamma == null) return;
+    sensorEventSeen = true;
+    // Android: sobald absolute Events fliessen, relative desselben Streams
+    // verwerfen (sonst ueberschreiben sie Nord mit falschem alpha).
+    if (ev.type === "deviceorientationabsolute" || ev.absolute === true) {
+      handleOrientation._sawAbsolute = true;
+    } else if (handleOrientation._sawAbsolute) {
+      return;
+    }
+    // Im manuellen Modus keine Matrixrechnung (Akku), Events bleiben aktiv.
+    if (mode !== "sensor") return;
 
     // Kontinuierliche Lage aus dem konsistenten Winkeltriplett.
     const t = orientationToView(alpha, beta, gamma, screenAngle());
@@ -327,10 +337,22 @@ export function createViewController(opts) {
     view.fovDeg = clamp(view.fovDeg * (ev.deltaY > 0 ? 1.07 : 1 / 1.07), 20, 100);
   }
 
+  // pointercancel darf KEIN Tap ausloesen (iOS feuert es bei Systemgesten):
+  // nur Zustand aufraeumen.
+  function onPointerCancel(ev) {
+    pointers.delete(ev.pointerId);
+    if (pointers.size < 2) pinchStartDist = 0;
+    if (pointers.size === 0) {
+      manual.dragging = false;
+      downInfo = null;
+      lastMove = null;
+    }
+  }
+
   el.addEventListener("pointerdown", onPointerDown);
   el.addEventListener("pointermove", onPointerMove);
   el.addEventListener("pointerup", onPointerUp);
-  el.addEventListener("pointercancel", onPointerUp);
+  el.addEventListener("pointercancel", onPointerCancel);
   el.addEventListener("wheel", onWheel, { passive: false });
 
   // ----- Update pro Frame --------------------------------------------------
@@ -400,15 +422,25 @@ export function createViewController(opts) {
 // ---------------------------------------------------------------------------
 
 export function requestLocation() {
-  return new Promise((resolve, reject) => {
-    if (!("geolocation" in navigator)) {
-      reject(new Error("Geolocation nicht verfuegbar"));
-      return;
-    }
+  const versuch = (opts) => new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve({ latDeg: pos.coords.latitude, lonDeg: pos.coords.longitude }),
       (err) => reject(err),
-      { enableHighAccuracy: false, timeout: 12000, maximumAge: 600000 }
+      opts
     );
   });
+  return (async () => {
+    if (!("geolocation" in navigator)) {
+      const e = new Error("Geolocation nicht verfuegbar"); e.code = 2;
+      throw e;
+    }
+    try {
+      // Stufe 1: schnell und stromsparend (gecachter Fix erlaubt).
+      return await versuch({ enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 });
+    } catch (err) {
+      // Ablehnung nicht wiederholen; sonst Stufe 2: echtes GPS mit mehr Zeit.
+      if (err && err.code === 1) throw err;
+      return await versuch({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+    }
+  })();
 }

@@ -611,7 +611,13 @@ function bindeUi() {
       zeigeHinweis("Standort übernommen.");
       tick();
     } catch (e) {
-      zeigeHinweis("Standort nicht verfügbar – es gilt weiterhin Essen.");
+      if (e && e.code === 1) {
+        zeigeHinweis("Standort verweigert. Erlaube ihn unter Einstellungen, Datenschutz, Ortungsdienste, Safari-Websites.", 6000);
+      } else if (e && e.code === 3) {
+        zeigeHinweis("Standort-Zeitüberschreitung. Bitte unter freiem Himmel erneut versuchen.", 5000);
+      } else {
+        zeigeHinweis("Standort nicht verfügbar – es gilt weiterhin " + state.observerLabel + ".", 5000);
+      }
     }
   });
 
@@ -632,12 +638,14 @@ function versteckeStart() {
 function bindeStart() {
   el.btnStartSensoren.addEventListener("click", async () => {
     versteckeStart();
+    halteDisplayWach();
     const ok = await controller.enableSensors(); // aus der User-Geste heraus
     aktualisiereModusButton();
     if (ok) zeigeHinweis("Handy an den Himmel halten – die Karte folgt deiner Blickrichtung.");
   });
   el.btnStartManuell.addEventListener("click", () => {
     versteckeStart();
+    halteDisplayWach();
     controller.setModeManual("start");
     zeigeHinweis("Wischen zum Schwenken, Pinch zum Zoomen, Antippen für Infos.");
   });
@@ -646,12 +654,30 @@ function bindeStart() {
 function registriereServiceWorker() {
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("sw.js").catch((e) => {
+      navigator.serviceWorker.register("sw.js").then((reg) => {
+        // Beim Zurueckkehren in die App nach neuen Versionen suchen,
+        // damit Updates nicht erst beim uebernaechsten Start ankommen.
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") reg.update().catch(() => {});
+        });
+      }).catch((e) => {
         console.info("Service Worker nicht registriert:", e.message);
       });
     });
   }
 }
+
+// Display wachhalten, solange man den Himmel beobachtet (iOS 16.4+).
+let wakeLock = null;
+async function halteDisplayWach() {
+  if (!("wakeLock" in navigator)) return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+  } catch (e) { /* z. B. Energiesparmodus: still ignorieren */ }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && wakeLock !== null) halteDisplayWach();
+});
 
 function start() {
   ladeEinstellungen();

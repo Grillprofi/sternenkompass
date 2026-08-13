@@ -39,7 +39,7 @@
 "use strict";
 
 /* Bei jedem Release hochzaehlen. */
-const CACHE_VERSION = "v1.0.1";
+const CACHE_VERSION = "v1.0.2";
 const CACHE_NAME = `sternenkompass-${CACHE_VERSION}`;
 
 /* App-Shell: alles, was die App zum Starten braucht. */
@@ -52,6 +52,8 @@ const APP_SHELL = [
   "./js/astro.js",
   "./js/render.js",
   "./js/sensors.js",
+  "./js/search.js",
+  "./js/learn.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-maskable-512.png",

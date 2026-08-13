@@ -158,14 +158,38 @@ export class StarRenderer {
     this.starCtx2d = null;  // 2D-Fallback
 
     this.gl = null;
+    this._glInit();
+    if (!this.gl) {
+      this.starCtx2d = starCanvas.getContext("2d");
+    }
+    // iOS wirft den WebGL-Kontext bei App-Wechsel/Speicherdruck gern weg.
+    // Ohne preventDefault kaeme er nie zurueck (Sternfeld bliebe schwarz).
+    starCanvas.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      this.gl = null;
+    });
+    starCanvas.addEventListener("webglcontextrestored", () => {
+      this._glInit();
+      if (this.gl && this._starsRaw) {
+        const { vecs, mags, bvs, meta } = this._starsRaw;
+        this.setStars(vecs, mags, bvs, meta);
+      }
+    });
+  }
+
+  _glInit() {
     try {
-      const gl = starCanvas.getContext("webgl", {
+      // preserveDrawingBuffer kostet auf iOS eine Framebuffer-Kopie pro Frame;
+      // nur fuer Headless-Screenshots (Testhook ?autostart=) aktivieren.
+      const testMode = typeof location !== "undefined" &&
+        new URLSearchParams(location.search).has("autostart");
+      const gl = this.starCanvas.getContext("webgl", {
         antialias: false,
         alpha: false,
         depth: false,
-        preserveDrawingBuffer: true,
+        preserveDrawingBuffer: testMode,
       });
-      if (gl) {
+      if (gl && !gl.isContextLost()) {
         this.gl = gl;
         this.prog = compileProgram(gl, VS, FS);
         this.loc = {
@@ -185,15 +209,13 @@ export class StarRenderer {
     } catch (e) {
       this.gl = null;
     }
-    if (!this.gl) {
-      this.starCtx2d = starCanvas.getContext("2d");
-    }
   }
 
   get mode() { return this.gl ? "webgl" : "canvas2d"; }
 
   // Sterne einmalig setzen. meta: Array paralleler Objekte fuer Picking/Info.
   setStars(vecs, mags, bvs, meta) {
+    this._starsRaw = { vecs, mags, bvs, meta }; // fuer Context-Restore
     const n = mags.length;
     const cols = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
@@ -617,7 +639,7 @@ export class StarRenderer {
     ctx.fillStyle = "#f0eee2";
     ctx.beginPath();
     ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2, false);
-    ctx.ellipse(0, 0, r * Math.abs(k), r, 0, Math.PI / 2, -Math.PI / 2, k > 0);
+    ctx.ellipse(0, 0, r * Math.abs(k), r, 0, Math.PI / 2, -Math.PI / 2, k < 0);
     ctx.fill();
     ctx.restore();
   }
